@@ -1,8 +1,9 @@
-use diem_crypto::x25519::{PrivateKey, PublicKey};
 use diem_crypto::Uniform;
 use diem_crypto::ValidCryptoMaterial;
+use diem_crypto::ed25519::Ed25519PrivateKey;
+use diem_crypto::x25519::{PrivateKey, PublicKey};
 
-use rand::{thread_rng, RngCore};
+use rand::{RngCore, thread_rng};
 use serde::de::DeserializeOwned;
 use serde::{Deserialize, Serialize};
 use serde_json;
@@ -117,13 +118,23 @@ fn main() {
     let out_dir = std::fs::canonicalize(out_dir).unwrap();
 
     // create associate keys
-    let key = PrivateKey::generate(&mut rng).to_bytes();
-    let root_sk = PrivateKey::try_from(key.as_ref()).unwrap();
-    let treasury_sk = PrivateKey::try_from(key.as_ref()).unwrap();
+    let admin_key = Ed25519PrivateKey::generate(&mut rng);
+    let mint_key_location = out_dir.join("mint.key");
+    let serialized_key = bcs::to_bytes(&admin_key).unwrap();
+    let mut file = File::create(mint_key_location).unwrap();
+    file.write_all(&serialized_key).unwrap();
+    file.flush().unwrap();
 
+    let admin_key_bytes = admin_key.to_bytes();
     let mut association_storage = Storage::new();
-    association_storage.set("diem_root", root_sk.public_key());
-    association_storage.set("treasury_compliance", treasury_sk.public_key());
+    association_storage.set(
+        "diem_root",
+        Ed25519PrivateKey::try_from(admin_key_bytes.as_ref()).unwrap(),
+    );
+    association_storage.set(
+        "treasury_compliance",
+        Ed25519PrivateKey::try_from(admin_key_bytes.as_ref()).unwrap(),
+    );
 
     let association_path = out_dir.join("association");
     std::fs::create_dir(&association_path).unwrap();
@@ -494,7 +505,7 @@ fn main() {
         let data: Storage = serde_json::from_reader(reader).unwrap();
         let account: String = data.get("owner_account").unwrap();
         let validator_sk: PrivateKey = data.get("validator_network").unwrap();
-        let validator_pk = validator_sk.public_key();
+        let validator_pk = PublicKey::from(&validator_sk);
         validator_network.insert(id, (account, *addr, validator_pk, validator_sk.to_bytes()));
     }
 
@@ -607,7 +618,7 @@ fn build_config(
     );
 
     let (account, addr, _, sk) = validator_network.remove(&validator_id).unwrap();
-    let sk = PrivateKey::try_from(sk.as_ref()).unwrap();
+    let sk = Ed25519PrivateKey::try_from(sk.as_ref()).unwrap();
     let mut identity = serde_yaml::Mapping::new();
     identity.insert(
         serde_yaml::to_value("type").unwrap(),
@@ -717,10 +728,14 @@ fn build_config(
 
 #[cfg(test)]
 mod test {
-    use std::{fs::File, io::BufReader};
+    use std::path::PathBuf;
 
+    use diem_crypto::ed25519::{Ed25519PrivateKey, Ed25519PublicKey};
     use diem_crypto::x25519::PrivateKey;
+
     use serde_json;
+
+    use crate::Storage;
     #[test]
     fn test_pk_sk_corect() {
         let pk_str = "\"d2a7de65f5cc93c83e03f7248bce5cfdea911e1b97a8dc7702a8dd2d3bea341b\"";
@@ -734,10 +749,25 @@ mod test {
     }
 
     #[test]
-    fn test_yaml_format() {
-        let file = File::open("test/validator_0/config.yaml").unwrap();
-        let reader = BufReader::new(file);
-        let value: serde_yaml::Value = serde_yaml::from_reader(reader).unwrap();
-        print!("{:?}\n", value);
+    fn crypto_test() {
+        let mint_key_location = PathBuf::from("/users/squ27/diem-exp-setup/test/mint.key");
+        let serialized = std::fs::read(mint_key_location).unwrap();
+        let sk1: Ed25519PrivateKey = bcs::from_bytes(&serialized).unwrap();
+
+        let storage_location =
+            PathBuf::from("/users/squ27/diem-exp-setup/test/association/storage.json");
+        let storage_file = std::fs::File::open(storage_location).unwrap();
+        let storage: Storage = serde_json::from_reader(storage_file).unwrap();
+        let sk2: Ed25519PrivateKey = storage.get("diem_root").unwrap();
+
+        assert!(sk1 == sk2);
+
+        let shared_storage_location =
+            PathBuf::from("/users/squ27/diem-exp-setup/test/genesis.json");
+        let shared_storage_file = std::fs::File::open(shared_storage_location).unwrap();
+        let shared_storage: Storage = serde_json::from_reader(shared_storage_file).unwrap();
+        let pk: Ed25519PublicKey = shared_storage.get("admin/diem_root").unwrap();
+
+        assert!(Ed25519PublicKey::from(&sk1) == pk);
     }
 }
