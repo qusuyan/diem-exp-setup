@@ -17,6 +17,7 @@ use std::process::Command;
 use std::sync::LazyLock;
 use std::time::SystemTime;
 use std::time::UNIX_EPOCH;
+use std::u64;
 
 static NOW: LazyLock<u64> = LazyLock::new(|| {
     SystemTime::now()
@@ -617,6 +618,12 @@ fn build_config(
         serde_yaml::Value::Mapping(backend.clone()),
     );
 
+    let mut mempool = serde_yaml::Mapping::new();
+    mempool.insert(
+        serde_yaml::to_value("capacity_per_user").unwrap(),
+        serde_yaml::to_value(u64::MAX).unwrap(),
+    );
+
     let (account, addr, _, sk) = validator_network.remove(&validator_id).unwrap();
     let sk = Ed25519PrivateKey::try_from(sk.as_ref()).unwrap();
     let mut identity = serde_yaml::Mapping::new();
@@ -709,6 +716,10 @@ fn build_config(
     config.insert(
         serde_yaml::to_value("execution").unwrap(),
         serde_yaml::Value::Mapping(execution),
+    );
+    config.insert(
+        serde_yaml::to_value("mempool").unwrap(),
+        serde_yaml::Value::Mapping(mempool),
     );
     config.insert(
         serde_yaml::to_value("validator_network").unwrap(),

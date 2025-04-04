@@ -11,3 +11,13 @@ diem-crypto = { git = "https://github.com/diem/diem", rev = "94a8bca0f" }
 diem-types = { git = "https://github.com/diem/diem", rev = "94a8bca0f" }
 diem-sdk = { git = "https://github.com/diem/diem", rev = "94a8bca0f" }
 rand = "0"
+clap = { version = "4.5", features = [
+    "help",
+    "suggestions",
+    "color",
+    "std",
+    "cargo",
+    "derive",
+] }
+log = "0"
+env_logger = "0"
